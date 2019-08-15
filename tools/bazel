@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# This file will be excuted if you run bazel command in worksapce, so we can control bazel version used in workspace.
+
+set -bue
+
+readonly BAZEL_VERSION='0.27.0'
+readonly BAZEL_PATH="${HOME}/.cache/bazel/bazel-${BAZEL_VERSION}"
+
+function get_os() {
+  if [[ "$(uname)" = 'Darwin' ]]; then
+    echo 'darwin'
+  else
+    echo 'linux'
+  fi
+}
+
+readonly BAZEL_URL="https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-$(get_os)-x86_64"
+
+if [[ ! -x "${BAZEL_PATH}" ]]; then
+  echo "Downloading bazel ${BAZEL_VERSION} ..."
+  mkdir -p "$(dirname "${BAZEL_PATH}")"
+  tempfile="$(mktemp "${BAZEL_PATH}.XXXXXX")"
+  curl --progress-bar --location --max-redirs 1 --output "${tempfile}" --url "${BAZEL_URL}" --fail
+  mv "${tempfile}" "${BAZEL_PATH}"
+  chmod +x "${BAZEL_PATH}"
+fi
+
+exec "${BAZEL_PATH}" "$@"

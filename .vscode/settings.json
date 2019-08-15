@@ -1,0 +1,21 @@
+// Place your settings in this file to overwrite the default settings
+{
+    "editor.formatOnSave": true,
+    "editor.renderControlCharacters": true,
+    "editor.tabSize": 2,
+    "files.associations": {
+        "BUILD": "bazel",
+        "METADATA": "bazel",
+        "WORKSPACE": "bazel"
+    },
+    "files.eol": "\n",
+    "files.exclude": {
+        "**/.git": true,
+        "bazel-*": true,
+    },
+    "files.insertFinalNewline": true,
+    "files.trimTrailingWhitespace": true,
+    "files.watcherExclude": {
+        "**/_bazel_*/**": true
+    },
+}

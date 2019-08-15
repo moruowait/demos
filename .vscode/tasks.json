@@ -1,0 +1,59 @@
+{
+  "version": "2.0.0",
+  "type": "shell",
+  "presentation": {
+    "echo": true,
+    "reveal": "always",
+    "focus": false,
+    "panel": "shared"
+  },
+  "tasks": [
+    {
+      "label": "Bazel: build :all",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "command": "bazel build :all",
+      "options": {
+        "cwd": "${fileDirname}"
+      },
+      "problemMatcher": {
+        "fileLocation": [
+          "relative",
+          "${workspaceRoot}"
+        ],
+        "pattern": {
+          "regexp": "^(\\S+):(\\d+):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "message": 3
+        }
+      }
+    },
+    {
+      "label": "Bazel: test ...",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "command": "bazel test ...",
+      "options": {
+        "cwd": "${fileDirname}"
+      }
+    },
+    {
+      "label": "Bazel: test ... (no cache)",
+      "group": "test",
+      "command": "bazel test --nocache_test_results ...",
+      "options": {
+        "cwd": "${fileDirname}"
+      }
+    },
+    {
+      "label": "Bazel: run gazelle",
+      "command": "bazel run //:gazelle -- ${fileDirname}",
+      "problemMatcher": []
+    }
+  ]
+}
