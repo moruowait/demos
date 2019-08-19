@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"regexp"
+	"unicode"
 )
 
 // HelloWorld prints the JSON encoded "message" field in the body
@@ -23,4 +25,24 @@ func HelloWorld(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Fprint(w, html.EscapeString(d.Message))
+}
+
+var scopeRe = regexp.MustCompile(`^[\/\w]+:\s+`)
+var formatRe = regexp.MustCompile(`：|\s{2}|^.*[^\w]$`)
+
+func isValid(s string) bool {
+	for _, r := range s {
+		if unicode.In(r, unicode.Han, unicode.Latin) || unicode.IsPunct(r) || r == ' ' {
+			continue
+		} else {
+			return false
+		}
+	}
+	if formatRe.Match([]byte(s)) {
+		return false
+	}
+	if !scopeRe.Match([]byte(s)) {
+		return false
+	}
+	return true
 }
