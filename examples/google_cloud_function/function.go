@@ -24,13 +24,13 @@ const (
 )
 
 type webhook struct {
-	Body        string
-	Head        head
-	PullRequest pullRequest
+	PullRequest pullRequest `json:"pull_request"`
 }
 
 type pullRequest struct {
+	Head  head
 	Title string
+	Body  string
 }
 
 type head struct {
