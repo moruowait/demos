@@ -64,7 +64,7 @@ func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-
+	log.Printf("receive: %v", &wh)
 	if !isTitleValid(wh.PullRequest.Title) {
 		io.WriteString(w, "OK")
 		if err := postGitHubPRCheckingStatus(wh.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
@@ -79,7 +79,6 @@ func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	log.Printf("receive: %v", &wh)
 	if err := postGitHubPRCheckingStatus(wh.Head.Sha, ghStatusSuccess, "Test passed", token); err != nil {
 		log.Println(err)
 	}
@@ -121,6 +120,7 @@ func isBodyValid(s string) bool {
 func postGitHubPRCheckingStatus(sha, status, description, token string) error {
 	// URL := fmt.Sprintf("https://api.github.com/repos/xreception/depot/statuses/%s", sha)
 	URL := fmt.Sprintf("https://api.github.com/repos/moruowait/bazeldemo/statuses/%s", sha)
+	log.Println(URL)
 	data := map[string]string{
 		"state":       status,
 		"target_url":  "https://github.com/xreception/depot/wiki/Pull-Request-Title-and-Description",
