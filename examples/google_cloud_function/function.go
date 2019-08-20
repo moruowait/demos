@@ -1,4 +1,3 @@
-// Package p contains an HTTP Cloud Function.
 package p
 
 import (
@@ -7,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -24,6 +24,7 @@ const (
 
 type validator struct {
 	PullRequest pullRequest `json:"pull_request"`
+	Token       string
 }
 
 type pullRequest struct {
@@ -36,46 +37,54 @@ type head struct {
 	Sha string
 }
 
-var encryptedAK = "CiQA0ev1XO7mUrSoJWceUh6kXkEeExjdebXlIQ9maVLlD6BztVISUQB15DKow2f15qU1QLIETYzK9/rftpgFLIwXdpq6R8pW3IrrQr3Tpl4vCr6zRyMRNam6zeWd8QmTpkd2RVf2Brg5qsX+RJymqGJwndTt1quDjw=="
+func newValidator(body io.ReadCloser) (*validator, error) {
+	var v validator
+	if err := json.NewDecoder(body).Decode(&v); err != nil {
+		return nil, fmt.Errorf("failed to decode requestBody: %v", err)
+	}
+	token, err := getGitHubToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GitHub token: %v", err)
+	}
+	v.Token = token
+	return &v, nil
+}
+
+var encryptedToken = "CiQA0ev1XO7mUrSoJWceUh6kXkEeExjdebXlIQ9maVLlD6BztVISUQB15DKow2f15qU1QLIETYzK9/rftpgFLIwXdpq6R8pW3IrrQr3Tpl4vCr6zRyMRNam6zeWd8QmTpkd2RVf2Brg5qsX+RJymqGJwndTt1quDjw=="
 var kmsKey = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
 
 // ReportPRValidationStatus check whether PR title and description is valid and report status to GitHub.
 func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
-	var v validator
-	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
-		log.Printf("Failed to decode requestBody: %v\n", err)
-		return
-	}
-	token, err := getGitHubToken()
+	v, err := newValidator(r.Body)
 	if err != nil {
-		log.Println(err)
+		log.Printf("Failed to new validator: %v", err)
 		return
 	}
-	if err := v.validateAndReport(token); err != nil {
-		log.Println(err)
+	if err := v.validateAndReport(); err != nil {
+		log.Printf("Failed to validateAndReport: %v", err)
 		return
 	}
 	return
 }
 
-func (v *validator) validateAndReport(token string) error {
+func (v *validator) validateAndReport() error {
 	if !v.isTitleValid() {
-		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(title)", token); err != nil {
+		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(title)"); err != nil {
 			return err
 		}
 		return nil
 	}
 	if !v.isBodyValid() {
-		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(body)", token); err != nil {
+		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(body)"); err != nil {
 			return err
 		}
 		return nil
 	}
-	return v.postGitHubPRCheckingStatus(ghStatusSuccess, "Test passed", token)
+	return v.postGitHubPRCheckingStatus(ghStatusSuccess, "Test passed")
 }
 
-var scopeRe = regexp.MustCompile(`^[\/\w]+:\s+`)       // scope 格式
-var formatRe = regexp.MustCompile(`：|\s{2}|^.*[^\w]$`) // 中文冒号；连续空格；非法末尾
+var scopeRe = regexp.MustCompile(`^[\/\w]+:\s`)     // scope 格式
+var formatRe = regexp.MustCompile(`：|\s{2}|[^\w]$`) // 中文冒号；连续空格；非法末尾
 
 func (v *validator) isTitleValid() bool {
 	for _, r := range v.PullRequest.Title {
@@ -105,8 +114,7 @@ func (v *validator) isBodyValid() bool {
 	return true
 }
 
-func (v *validator) postGitHubPRCheckingStatus(status, description, token string) error {
-	// URL := fmt.Sprintf("https://api.github.com/repos/xreception/depot/statuses/%s", sha)
+func (v *validator) postGitHubPRCheckingStatus(status, description string) error {
 	URL := fmt.Sprintf("https://api.github.com/repos/moruowait/bazeldemo/statuses/%s", v.PullRequest.Head.Sha)
 	data := map[string]string{
 		"state":       status,
@@ -124,8 +132,7 @@ func (v *validator) postGitHubPRCheckingStatus(status, description, token string
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("token %s", token))
-
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", v.Token))
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
@@ -152,7 +159,7 @@ func getGitHubToken() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return decrypt(svr, encryptedAK)
+	return decrypt(svr, encryptedToken)
 }
 
 func decrypt(svr *cloudkms.Service, ciphertext string) (string, error) {
