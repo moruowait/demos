@@ -44,7 +44,7 @@ var kmsKey = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys
 func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 	var wh webhook
 	if err := json.NewDecoder(r.Body).Decode(&wh); err != nil {
-		log.Printf("Failed to decode requestBody: %v", err)
+		log.Printf("Failed to decode requestBody: %v\n", err)
 		return
 	}
 	ctx := context.Background()
@@ -63,17 +63,16 @@ func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	log.Printf("receive: %v", &wh)
 	if !isTitleValid(wh.PullRequest.Title) {
-		io.WriteString(w, "OK")
-		if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
+		io.WriteString(w, "Title invalid")
+		if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusFailure, "Test failed(title)", token); err != nil {
 			log.Println(err)
 		}
 		return
 	}
 	if isBodyValid(wh.PullRequest.Body) {
-		io.WriteString(w, "OK")
-		if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
+		io.WriteString(w, "Body invalid")
+		if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusFailure, "Test failed(body)", token); err != nil {
 			log.Println(err)
 		}
 		return
@@ -144,7 +143,6 @@ func postGitHubPRCheckingStatus(sha, status, description, token string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	fmt.Println("status:", resp.StatusCode)
 	if resp.StatusCode != http.StatusCreated {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
