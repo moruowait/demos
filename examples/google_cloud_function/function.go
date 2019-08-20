@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -23,7 +22,7 @@ const (
 	ghStatusFailure = "failure"
 )
 
-type webhook struct {
+type validator struct {
 	PullRequest pullRequest `json:"pull_request"`
 }
 
@@ -42,70 +41,59 @@ var kmsKey = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys
 
 // ReportPRValidationStatus check whether PR title and description is valid and report status to GitHub.
 func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
-	var wh webhook
-	if err := json.NewDecoder(r.Body).Decode(&wh); err != nil {
+	var v validator
+	if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
 		log.Printf("Failed to decode requestBody: %v\n", err)
 		return
 	}
-	ctx := context.Background()
-	cli, err := google.DefaultClient(ctx, cloudkms.CloudPlatformScope)
+	token, err := getGitHubToken()
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	svr, err := cloudkms.New(cli)
-	if err != nil {
+	if err := v.validateAndReport(token); err != nil {
 		log.Println(err)
 		return
 	}
-	token, err := decrypt(svr, encryptedAK)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	if !isTitleValid(wh.PullRequest.Title) {
-		io.WriteString(w, "Title invalid")
-		if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusFailure, "Test failed(title)", token); err != nil {
-			log.Println(err)
-		}
-		return
-	}
-	if !isBodyValid(wh.PullRequest.Body) {
-		io.WriteString(w, "Body invalid")
-		if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusFailure, "Test failed(body)", token); err != nil {
-			log.Println(err)
-		}
-		return
-	}
-	if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusSuccess, "Test passed", token); err != nil {
-		log.Println(err)
-	}
-	io.WriteString(w, "OK")
 	return
 }
 
-var scopeRe = regexp.MustCompile(`^[\/\w]+:\s+`)
-var formatRe = regexp.MustCompile(`：|\s{2}|^.*[^\w]$`)
+func (v *validator) validateAndReport(token string) error {
+	if !v.isTitleValid() {
+		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(title)", token); err != nil {
+			return err
+		}
+	}
+	if !v.isBodyValid() {
+		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(body)", token); err != nil {
+			return err
+		}
+	}
+	return v.postGitHubPRCheckingStatus(ghStatusSuccess, "Test passed", token)
+}
 
-func isTitleValid(s string) bool {
-	for _, r := range s {
+var scopeRe = regexp.MustCompile(`^[\/\w]+:\s+`)       // scope 格式
+var formatRe = regexp.MustCompile(`：|\s{2}|^.*[^\w]$`) // 中文冒号；连续空格；非法末尾
+
+func (v *validator) isTitleValid() bool {
+	for _, r := range v.PullRequest.Title {
 		if unicode.In(r, unicode.Han, unicode.Latin) || unicode.IsPunct(r) || r == ' ' {
 			continue
 		} else {
 			return false
 		}
 	}
-	if formatRe.Match([]byte(s)) {
+	if formatRe.Match([]byte(v.PullRequest.Title)) {
 		return false
 	}
-	if !scopeRe.Match([]byte(s)) {
+	if !scopeRe.Match([]byte(v.PullRequest.Title)) {
 		return false
 	}
 	return true
 }
 
-func isBodyValid(s string) bool {
-	for _, r := range s {
+func (v *validator) isBodyValid() bool {
+	for _, r := range v.PullRequest.Body {
 		if unicode.In(r, unicode.Han, unicode.Latin) || unicode.IsPunct(r) || unicode.IsSpace(r) {
 			continue
 		} else {
@@ -115,10 +103,9 @@ func isBodyValid(s string) bool {
 	return true
 }
 
-func postGitHubPRCheckingStatus(sha, status, description, token string) error {
+func (v *validator) postGitHubPRCheckingStatus(status, description, token string) error {
 	// URL := fmt.Sprintf("https://api.github.com/repos/xreception/depot/statuses/%s", sha)
-	URL := fmt.Sprintf("https://api.github.com/repos/moruowait/bazeldemo/statuses/%s", sha)
-	log.Println(URL)
+	URL := fmt.Sprintf("https://api.github.com/repos/moruowait/bazeldemo/statuses/%s", v.PullRequest.Head.Sha)
 	data := map[string]string{
 		"state":       status,
 		"target_url":  "https://github.com/xreception/depot/wiki/Pull-Request-Title-and-Description",
@@ -151,6 +138,19 @@ func postGitHubPRCheckingStatus(sha, status, description, token string) error {
 		return fmt.Errorf("Failed to post GitHub status with response: %v", string(body))
 	}
 	return nil
+}
+
+func getGitHubToken() (string, error) {
+	ctx := context.Background()
+	cli, err := google.DefaultClient(ctx, cloudkms.CloudPlatformScope)
+	if err != nil {
+		return "", err
+	}
+	svr, err := cloudkms.New(cli)
+	if err != nil {
+		return "", err
+	}
+	return decrypt(svr, encryptedAK)
 }
 
 func decrypt(svr *cloudkms.Service, ciphertext string) (string, error) {
