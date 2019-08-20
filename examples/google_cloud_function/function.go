@@ -3,6 +3,8 @@ package p
 
 import (
 	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +13,9 @@ import (
 	"net/http"
 	"regexp"
 	"unicode"
+
+	"golang.org/x/oauth2/google"
+	cloudkms "google.golang.org/api/cloudkms/v1"
 )
 
 const (
@@ -32,16 +37,34 @@ type head struct {
 	Sha string
 }
 
-var token = "dafs"
+var encryptedAK = "CiQA0ev1XO7mUrSoJWceUh6kXkEeExjdebXlIQ9maVLlD6BztVISUQB15DKow2f15qU1QLIETYzK9/rftpgFLIwXdpq6R8pW3IrrQr3Tpl4vCr6zRyMRNam6zeWd8QmTpkd2RVf2Brg5qsX+RJymqGJwndTt1quDjw=="
+var kmsKey = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
 
 // ReportPRValidationStatus check whether PR title and description is valid and report status to GitHub.
 func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
-
 	var wh webhook
 	if err := json.NewDecoder(r.Body).Decode(&wh); err != nil {
 		log.Printf("Failed to decode requestBody: %v", err)
 		return
 	}
+
+	ctx := context.Background()
+	cli, err := google.DefaultClient(ctx, cloudkms.CloudPlatformScope)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	svr, err := cloudkms.New(cli)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	token, err := decrypt(svr, encryptedAK)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
 	if !isTitleValid(wh.PullRequest.Title) {
 		io.WriteString(w, "OK")
 		if err := postGitHubPRCheckingStatus(wh.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
@@ -131,4 +154,19 @@ func postGitHubPRCheckingStatus(sha, status, description, token string) error {
 		return fmt.Errorf("Failed to post GitHub status with response: %v", string(body))
 	}
 	return nil
+}
+
+func decrypt(svr *cloudkms.Service, ciphertext string) (string, error) {
+	req := &cloudkms.DecryptRequest{
+		Ciphertext: ciphertext,
+	}
+	resp, err := svr.Projects.Locations.KeyRings.CryptoKeys.Decrypt(kmsKey, req).Do()
+	if err != nil {
+		return "", err
+	}
+	b, err := base64.StdEncoding.DecodeString(resp.Plaintext)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
