@@ -70,7 +70,7 @@ func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if isBodyValid(wh.PullRequest.Body) {
+	if !isBodyValid(wh.PullRequest.Body) {
 		io.WriteString(w, "Body invalid")
 		if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusFailure, "Test failed(body)", token); err != nil {
 			log.Println(err)
