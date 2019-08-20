@@ -63,11 +63,13 @@ func (v *validator) validateAndReport(token string) error {
 		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(title)", token); err != nil {
 			return err
 		}
+		return nil
 	}
 	if !v.isBodyValid() {
 		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(body)", token); err != nil {
 			return err
 		}
+		return nil
 	}
 	return v.postGitHubPRCheckingStatus(ghStatusSuccess, "Test passed", token)
 }
