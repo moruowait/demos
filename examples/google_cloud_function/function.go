@@ -47,7 +47,6 @@ func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to decode requestBody: %v", err)
 		return
 	}
-
 	ctx := context.Background()
 	cli, err := google.DefaultClient(ctx, cloudkms.CloudPlatformScope)
 	if err != nil {
@@ -67,19 +66,19 @@ func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 	log.Printf("receive: %v", &wh)
 	if !isTitleValid(wh.PullRequest.Title) {
 		io.WriteString(w, "OK")
-		if err := postGitHubPRCheckingStatus(wh.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
+		if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
 			log.Println(err)
 		}
 		return
 	}
-	if isBodyValid(wh.Body) {
+	if isBodyValid(wh.PullRequest.Body) {
 		io.WriteString(w, "OK")
-		if err := postGitHubPRCheckingStatus(wh.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
+		if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
 			log.Println(err)
 		}
 		return
 	}
-	if err := postGitHubPRCheckingStatus(wh.Head.Sha, ghStatusSuccess, "Test passed", token); err != nil {
+	if err := postGitHubPRCheckingStatus(wh.PullRequest.Head.Sha, ghStatusSuccess, "Test passed", token); err != nil {
 		log.Println(err)
 	}
 	io.WriteString(w, "OK")
