@@ -2,22 +2,37 @@
 package p
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
 	"unicode"
 )
 
+const (
+	ghStatusSuccess = "success"
+	ghStatusFailure = "failure"
+)
+
 type webhook struct {
-	PullRequest pullRequest
 	Body        string
+	Head        head
+	PullRequest pullRequest
 }
 
 type pullRequest struct {
 	Title string
 }
+
+type head struct {
+	Sha string
+}
+
+var token = "cce636fb02bbe2bc4de8b6c59ac9cf17ace0e26f"
 
 // ReportPRValidationStatus check whether PR title and description is valid and report status to GitHub.
 func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
@@ -29,17 +44,24 @@ func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if !isTitleValid(wh.PullRequest.Title) {
 		io.WriteString(w, "OK")
-		// report status
+		if err := postGitHubPRCheckingStatus(wh.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
+			log.Println(err)
+		}
 		return
 	}
 	if isBodyValid(wh.Body) {
 		io.WriteString(w, "OK")
-		// report status
+		if err := postGitHubPRCheckingStatus(wh.Head.Sha, ghStatusFailure, "Test failed", token); err != nil {
+			log.Println(err)
+		}
 		return
 	}
 	log.Printf("receive: %v", &wh)
-	// report status
+	if err := postGitHubPRCheckingStatus(wh.Head.Sha, ghStatusSuccess, "Test passed", token); err != nil {
+		log.Println(err)
+	}
 	io.WriteString(w, "OK")
+	return
 }
 
 var scopeRe = regexp.MustCompile(`^[\/\w]+:\s+`)
@@ -71,4 +93,42 @@ func isBodyValid(s string) bool {
 		}
 	}
 	return true
+}
+
+func postGitHubPRCheckingStatus(sha, status, description, token string) error {
+	// URL := fmt.Sprintf("https://api.github.com/repos/xreception/depot/statuses/%s", sha)
+	URL := fmt.Sprintf("https://api.github.com/repos/moruowait/bazeldemo/statuses/%s", sha)
+	data := map[string]string{
+		"state":       status,
+		"target_url":  "https://github.com/xreception/depot/wiki/Pull-Request-Title-and-Description",
+		"description": description,
+		"context":     "Google Cloud Function PR check",
+	}
+	b, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", URL, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", token))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	defer resp.Body.Close()
+	fmt.Println("status:", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("Failed to post GitHub status with response: %v", string(body))
+	}
+	return nil
 }
