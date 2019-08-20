@@ -32,7 +32,7 @@ type head struct {
 	Sha string
 }
 
-var token = "cce636fb02bbe2bc4de8b6c59ac9cf17ace0e26f"
+var token = "dafs"
 
 // ReportPRValidationStatus check whether PR title and description is valid and report status to GitHub.
 func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
