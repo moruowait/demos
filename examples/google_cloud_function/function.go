@@ -18,14 +18,12 @@ import (
 )
 
 const (
-	ghStatusSuccess = "success"
 	ghStatusFailure = "failure"
-)
+	ghStatusSuccess = "success"
 
-type validator struct {
-	PullRequest pullRequest `json:"pull_request"`
-	Token       string
-}
+	encryptedToken = "CiQA0ev1XO7mUrSoJWceUh6kXkEeExjdebXlIQ9maVLlD6BztVISUQB15DKow2f15qU1QLIETYzK9/rftpgFLIwXdpq6R8pW3IrrQr3Tpl4vCr6zRyMRNam6zeWd8QmTpkd2RVf2Brg5qsX+RJymqGJwndTt1quDjw=="
+	kmsKey         = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
+)
 
 type pullRequest struct {
 	Head  head
@@ -35,6 +33,11 @@ type pullRequest struct {
 
 type head struct {
 	Sha string
+}
+
+type validator struct {
+	PullRequest pullRequest `json:"pull_request"`
+	Token       string
 }
 
 func newValidator(body io.ReadCloser) (*validator, error) {
@@ -49,9 +52,6 @@ func newValidator(body io.ReadCloser) (*validator, error) {
 	v.Token = token
 	return &v, nil
 }
-
-var encryptedToken = "CiQA0ev1XO7mUrSoJWceUh6kXkEeExjdebXlIQ9maVLlD6BztVISUQB15DKow2f15qU1QLIETYzK9/rftpgFLIwXdpq6R8pW3IrrQr3Tpl4vCr6zRyMRNam6zeWd8QmTpkd2RVf2Brg5qsX+RJymqGJwndTt1quDjw=="
-var kmsKey = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
 
 // ReportPRValidationStatus check whether PR title and description is valid and report status to GitHub.
 func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
@@ -68,14 +68,14 @@ func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (v *validator) validateAndReport() error {
-	if !v.isTitleValid() {
-		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(title)"); err != nil {
+	if reason, valid := v.checkTitle(); !valid {
+		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, fmt.Sprintf("Test failed(title: %v)", reason)); err != nil {
 			return err
 		}
 		return nil
 	}
-	if !v.isBodyValid() {
-		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, "Test failed(body)"); err != nil {
+	if reason, valid := v.checkBody(); !valid {
+		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, fmt.Sprintf("Test failed(body: %v)", reason)); err != nil {
 			return err
 		}
 		return nil
@@ -83,35 +83,45 @@ func (v *validator) validateAndReport() error {
 	return v.postGitHubPRCheckingStatus(ghStatusSuccess, "Test passed")
 }
 
+// var formatRe = regexp.MustCompile(`：|\s{2}|[^\w]$`) // ；；
+var chineseColonRe = regexp.MustCompile(`：`)        // 中文冒号
+var invalidEndRe = regexp.MustCompile(`[^\w]$`)     // 非法末尾
+var continuousSpaceRe = regexp.MustCompile(`\s{2}`) // 连续空格
 var scopeRe = regexp.MustCompile(`^[\/\w]+:\s`)     // scope 格式
-var formatRe = regexp.MustCompile(`：|\s{2}|[^\w]$`) // 中文冒号；连续空格；非法末尾
 
-func (v *validator) isTitleValid() bool {
+func (v *validator) checkTitle() (reason string, valid bool) {
 	for _, r := range v.PullRequest.Title {
 		if unicode.In(r, unicode.Han, unicode.Latin) || unicode.IsPunct(r) || r == ' ' {
 			continue
 		} else {
-			return false
+			return "contains invalid character", false
 		}
 	}
-	if formatRe.Match([]byte(v.PullRequest.Title)) {
-		return false
+	title := []byte(v.PullRequest.Title)
+	if chineseColonRe.Match(title) {
+		return "invalid '：'", false
+	}
+	if invalidEndRe.Match(title) {
+		return "invalid end", false
+	}
+	if continuousSpaceRe.Match(title) {
+		return "invalid continuous space", false
 	}
 	if !scopeRe.Match([]byte(v.PullRequest.Title)) {
-		return false
+		return "invalid scope format", false
 	}
-	return true
+	return "", true
 }
 
-func (v *validator) isBodyValid() bool {
+func (v *validator) checkBody() (reason string, valid bool) {
 	for _, r := range v.PullRequest.Body {
 		if unicode.In(r, unicode.Han, unicode.Latin) || unicode.IsPunct(r) || unicode.IsSpace(r) {
 			continue
 		} else {
-			return false
+			return "contains invalid character", false
 		}
 	}
-	return true
+	return "", true
 }
 
 func (v *validator) postGitHubPRCheckingStatus(status, description string) error {
@@ -120,7 +130,7 @@ func (v *validator) postGitHubPRCheckingStatus(status, description string) error
 		"state":       status,
 		"target_url":  "https://github.com/xreception/depot/wiki/Pull-Request-Title-and-Description",
 		"description": description,
-		"context":     "Google Cloud Function PR check",
+		"context":     "PR title and description check",
 	}
 	b, err := json.Marshal(data)
 	if err != nil {
@@ -135,7 +145,6 @@ func (v *validator) postGitHubPRCheckingStatus(status, description string) error
 	req.Header.Set("Authorization", fmt.Sprintf("token %s", v.Token))
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 	defer resp.Body.Close()
