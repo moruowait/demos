@@ -52,6 +52,23 @@ func init() {
 	v.Token = token
 }
 
+func decryptGitHubToken(ctx context.Context, ciphertext string) (string, error) {
+	cli, err := cloudkms.NewKeyManagementClient(ctx)
+	if err != nil {
+		return "", err
+	}
+	req := &kmspb.DecryptRequest{
+		Name:       kmsKey,
+		Ciphertext: []byte(ciphertext),
+	}
+
+	resp, err := cli.Decrypt(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return string(resp.Plaintext), nil
+}
+
 // ValidatePullRequest check whether PR title and description is valid and report status to GitHub.
 func ValidatePullRequest(w http.ResponseWriter, r *http.Request) {
 	var whr webhookRequest
@@ -181,19 +198,4 @@ func (v *validator) postGitHubPRCheckStatus(requestURL, state, description strin
 		return fmt.Errorf("failed to post GitHub status with response: %v", string(body))
 	}
 	return nil
-}
-
-func decryptGitHubToken(ctx context.Context, ciphertext string) (string, error) {
-	cli, err := cloudkms.NewKeyManagementClient(ctx)
-	if err != nil {
-		return "", err
-	}
-	req := &kmspb.DecryptRequest{
-		Ciphertext: []byte(ciphertext),
-	}
-	resp, err := cli.Decrypt(ctx, req)
-	if err != nil {
-		return "", err
-	}
-	return string(resp.Plaintext), nil
 }
