@@ -3,6 +3,6 @@ module demos/examples/google_cloud_function
 go 1.11
 
 require (
-	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
-	google.golang.org/api v0.8.0
+	cloud.google.com/go v0.44.3
+	google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55
 )
