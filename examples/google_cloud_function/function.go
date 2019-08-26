@@ -20,7 +20,7 @@ const (
 	ghStatusFailure = "failure"
 	ghStatusSuccess = "success"
 
-	encryptedGitHubToken = "CiQA0ev1XHH7SG+rHF4wWeA4c2Qi/SlPU9AqIiqh+CgK93arH+cSUgB15DKociD2RU3w8gYwsTOl3/X7WDLJxYmuA8Y2XRkuXalB3wqdg5gShXba3BjUy7Pzhl2Ee/iuX8PCFOiMLIsdQoFBKtknwzrcr2cANnLYpyc="
+	encryptedGitHubToken = "CiQA0ev1XJIfg6wmsY7Ln3bbmVqIZVRN0hdsn/L5HXRfb7wTAboSUQB15DKoxvXMvb9vrqco3JVZ46Mw7fBbSBAMCwKD6R33kd0MKQ1QYBsYSeGezwIlk83SwXbqhWZYBLEHgsIJ6mdPFrx76NVf+6x5l5hdxhhlhw=="
 	kmsKey               = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
 )
 
