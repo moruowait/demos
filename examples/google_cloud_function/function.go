@@ -24,25 +24,28 @@ const (
 	kmsKey               = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
 )
 
-type pullRequest struct {
-	Head  head
-	Title string
-	Body  string
-}
-
-type head struct {
-	Sha string
-}
-
 type webhookRequest struct {
-	PullRequest pullRequest `json:"pull_request"`
+	PullRequest struct {
+		Body string `json:"body"`
+		Head struct {
+			Sha string `json:"sha"`
+		} `json:"head"`
+		StatusesURL string `json:"statuses_url"`
+		Title       string `json:"title"`
+	} `json:"pull_request"`
 }
 
 type validator struct {
 	Token string
 }
 
-var v validator
+func newValidator(token string) *validator {
+	return &validator{
+		Token: token,
+	}
+}
+
+var v *validator
 
 func init() {
 	token, err := decryptGitHubToken(context.Background(), encryptedGitHubToken)
@@ -50,7 +53,7 @@ func init() {
 		log.Printf("Failed to decrypt GitHub Token: %v", err)
 		os.Exit(1)
 	}
-	v.Token = token
+	v = newValidator(token)
 }
 
 func decryptGitHubToken(ctx context.Context, ciphertext string) (string, error) {
@@ -81,110 +84,106 @@ func ValidatePullRequest(w http.ResponseWriter, r *http.Request) {
 		log.Printf("failed to decode requestBody: %v", err)
 		return
 	}
-	if err := v.validateAndReport(whr); err != nil {
+	if err := v.validateAndReport(&whr); err != nil {
 		log.Printf("Failed to validateAndReport: %v", err)
 		return
 	}
 	return
 }
 
-func (v *validator) validateAndReport(whr webhookRequest) error {
-	requestURL := fmt.Sprintf("https://api.github.com/repos/moruowait/bazeldemo/statuses/%s", whr.PullRequest.Head.Sha)
-	if reason, valid := v.checkTitle(whr); !valid {
-		if err := v.postGitHubPRCheckStatus(requestURL, ghStatusFailure, fmt.Sprintf("Test failed (title: %v)", reason)); err != nil {
-			return err
-		}
-		return nil
+func (v *validator) validateAndReport(whr *webhookRequest) error {
+	state, msg := v.validate(whr)
+	return v.postGitHubPRCheckStatus(whr, state, msg)
+}
+
+func (v *validator) validate(whr *webhookRequest) (state string, message string) {
+	if err := v.checkTitle(whr); err != nil {
+		return ghStatusFailure, err.Error()
 	}
-	if reason, valid := v.checkBody(whr); !valid {
-		if err := v.postGitHubPRCheckStatus(requestURL, ghStatusFailure, fmt.Sprintf("Test failed (body: %v)", reason)); err != nil {
-			return err
-		}
-		return nil
+	if err := v.checkBody(whr); err != nil {
+		return ghStatusFailure, err.Error()
 	}
-	return v.postGitHubPRCheckStatus(requestURL, ghStatusSuccess, "Test passed")
+	return ghStatusSuccess, "Test passed"
 }
 
 var titleRules = []struct {
 	re      *regexp.Regexp
 	message string
-	match   bool
+	want    bool
 }{
 	{
 		re:      regexp.MustCompile(`[\p{Han}\p{Latin}[:punct:]\s]+`),
 		message: "should not include invalid characters",
-		match:   false,
+		want:    true,
 	},
 	{
 		re:      regexp.MustCompile(`：`),
 		message: "should not include Chinese colon",
-		match:   true,
+		want:    false,
 	},
 	{
 		re:      regexp.MustCompile(`\W$`),
 		message: "should not end with non-word-characters",
-		match:   true,
+		want:    false,
 	},
 	{
 		re:      regexp.MustCompile(`\s{2}`),
 		message: "should not include continues spaces",
-		match:   true,
+		want:    false,
 	},
 	{
 		re:      regexp.MustCompile(`[\/\w]+:\s`),
 		message: "should not include invalid scope",
-		match:   false,
+		want:    true,
 	},
 }
 
-func (v *validator) checkTitle(whr webhookRequest) (reason string, valid bool) {
+func (v *validator) checkTitle(whr *webhookRequest) error {
 	for _, r := range titleRules {
-		if r.match == r.re.Match([]byte(whr.PullRequest.Title)) {
-			return r.message, false
+		if got := r.re.Match([]byte(whr.PullRequest.Title)); got != r.want {
+			return fmt.Errorf("Test failed (title: %v)", r.message)
 		}
 	}
-	return "", true
+	return nil
 }
 
 var bodyRules = []struct {
 	re      *regexp.Regexp
 	message string
-	match   bool
+	want    bool
 }{
 	{
 		re:      regexp.MustCompile(`[\p{Han}\p{Latin}[:punct:]\s]+`),
 		message: "should not include invalid characters",
-		match:   true,
+		want:    true,
 	},
 }
 
-func (v *validator) checkBody(whr webhookRequest) (reason string, valid bool) {
+func (v *validator) checkBody(whr *webhookRequest) error {
 	for _, r := range bodyRules {
-		if r.match == r.re.Match([]byte(whr.PullRequest.Body)) {
-			return r.message, false
+		if got := r.re.Match([]byte(whr.PullRequest.Body)); got != r.want {
+			return fmt.Errorf("Test failed (body: %v)", r.message)
 		}
 	}
-	return "", true
+	return nil
 }
 
-type gitHubStatus struct {
-	Context     string `json:"context"`
-	Description string `json:"description"`
-	State       string `json:"state"`
-	TargetURL   string `json:"target_url"`
-}
-
-func (v *validator) postGitHubPRCheckStatus(requestURL, state, description string) error {
-	b, err := json.Marshal(gitHubStatus{
+func (v *validator) postGitHubPRCheckStatus(whr *webhookRequest, state, description string) error {
+	b, err := json.Marshal(struct {
+		Context     string `json:"context"`
+		Description string `json:"description"`
+		State       string `json:"state"`
+		TargetURL   string `json:"target_url"`
+	}{
 		Context:     "Title and description",
-		TargetURL:   "https://github.com/xreception/depot/wiki/Pull-Request-Title-and-Description",
-		State:       state,
 		Description: description,
+		State:       state,
+		TargetURL:   "https://github.com/xreception/depot/wiki/Pull-Request-Title-and-Description",
 	})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, requestURL, bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, whr.PullRequest.StatusesURL, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
