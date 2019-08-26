@@ -1,4 +1,4 @@
-package p
+package pullrequest
 
 import (
 	"bytes"
@@ -54,7 +54,7 @@ func init() {
 }
 
 func decryptGitHubToken(ctx context.Context, ciphertext string) (string, error) {
-	b, err := base64.StdEncoding.Decode(ciphertext)
+	b, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
 		return "", err
 	}
