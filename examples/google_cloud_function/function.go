@@ -3,26 +3,24 @@ package p
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
-	"unicode"
 
-	"golang.org/x/oauth2/google"
-	cloudkms "google.golang.org/api/cloudkms/v1"
+	cloudkms "cloud.google.com/go/kms/apiv1"
+	kmspb "google.golang.org/genproto/googleapis/cloud/kms/v1"
 )
 
 const (
 	ghStatusFailure = "failure"
 	ghStatusSuccess = "success"
 
-	encryptedToken = "CiQA0ev1XO7mUrSoJWceUh6kXkEeExjdebXlIQ9maVLlD6BztVISUQB15DKow2f15qU1QLIETYzK9/rftpgFLIwXdpq6R8pW3IrrQr3Tpl4vCr6zRyMRNam6zeWd8QmTpkd2RVf2Brg5qsX+RJymqGJwndTt1quDjw=="
-	kmsKey         = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
+	encryptedGitHubToken = "CiQA0ev1XMnLXYQDXu5RQSbJiOhuE0X2+pG2XT2/JCXpqHp9A40SRwB15DKorxJzjP6BIarS4Nf+zap23/I0TAUAHupfJOsRCW3TTM+kGpxCqwGn8PzZ7xCNWGVKFY1X59n0ewL/o2Y7dMUqQ76+"
+	kmsKey               = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
 )
 
 type pullRequest struct {
@@ -35,114 +33,142 @@ type head struct {
 	Sha string
 }
 
-type validator struct {
+type webhookRequest struct {
 	PullRequest pullRequest `json:"pull_request"`
-	Token       string
 }
 
-func newValidator(body io.ReadCloser) (*validator, error) {
-	var v validator
-	if err := json.NewDecoder(body).Decode(&v); err != nil {
-		return nil, fmt.Errorf("failed to decode requestBody: %v", err)
-	}
-	token, err := getGitHubToken()
+type validator struct {
+	Token string
+}
+
+var v validator
+
+func init() {
+	token, err := decryptGitHubToken(context.Background(), encryptedGitHubToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get GitHub token: %v", err)
+		log.Printf("Failed to decrypt GitHub Token: %v", err)
+		os.Exit(1)
 	}
 	v.Token = token
-	return &v, nil
 }
 
 // ValidatePullRequest check whether PR title and description is valid and report status to GitHub.
 func ValidatePullRequest(w http.ResponseWriter, r *http.Request) {
-	v, err := newValidator(r.Body)
-	if err != nil {
-		log.Printf("Failed to new validator: %v", err)
+	var whr webhookRequest
+	if err := json.NewDecoder(r.Body).Decode(&whr); err != nil {
+		log.Printf("failed to decode requestBody: %v", err)
 		return
 	}
-	if err := v.validateAndReport(); err != nil {
+	if err := v.validateAndReport(whr); err != nil {
 		log.Printf("Failed to validateAndReport: %v", err)
 		return
 	}
 	return
 }
 
-func (v *validator) validateAndReport() error {
-	if reason, valid := v.checkTitle(); !valid {
-		if err := v.postGitHubPRCheckStatus(ghStatusFailure, fmt.Sprintf("Test failed(title: %v)", reason)); err != nil {
+func (v *validator) validateAndReport(whr webhookRequest) error {
+	requestURL := fmt.Sprintf("https://api.github.com/repos/moruowait/bazeldemo/statuses/%s", whr.PullRequest.Head.Sha)
+	if reason, valid := v.checkTitle(whr); !valid {
+		if err := v.postGitHubPRCheckStatus(requestURL, ghStatusFailure, fmt.Sprintf("Test failed (title: %v)", reason)); err != nil {
 			return err
 		}
 		return nil
 	}
-	if reason, valid := v.checkBody(); !valid {
-		if err := v.postGitHubPRCheckStatus(ghStatusFailure, fmt.Sprintf("Test failed(body: %v)", reason)); err != nil {
+	if reason, valid := v.checkBody(whr); !valid {
+		if err := v.postGitHubPRCheckStatus(requestURL, ghStatusFailure, fmt.Sprintf("Test failed (body: %v)", reason)); err != nil {
 			return err
 		}
 		return nil
 	}
-	return v.postGitHubPRCheckStatus(ghStatusSuccess, "Test passed")
+	return v.postGitHubPRCheckStatus(requestURL, ghStatusSuccess, "Test passed")
 }
 
-var chineseColonRe = regexp.MustCompile(`：`)        // 中文冒号
-var invalidEndRe = regexp.MustCompile(`[^\w]$`)     // 非法末尾
-var continuousSpaceRe = regexp.MustCompile(`\s{2}`) // 连续空格
-var scopeRe = regexp.MustCompile(`^[\/\w]+:\s`)     // scope 格式
+var titleRules = []struct {
+	re      *regexp.Regexp
+	message string
+	match   bool
+}{
+	{
+		re:      regexp.MustCompile(`[\p{Han}\p{Latin}[:punct:]\s]+`),
+		message: "should not include invalid characters",
+		match:   true,
+	},
+	{
+		re:      regexp.MustCompile(`：`),
+		message: "should not include Chinese colon",
+		match:   true,
+	},
+	{
+		re:      regexp.MustCompile(`\W$`),
+		message: "should not end with non-word-characters",
+		match:   true,
+	},
+	{
+		re:      regexp.MustCompile(`\s{2}`),
+		message: "should not include continues spaces",
+		match:   true,
+	},
+	{
+		re:      regexp.MustCompile(`[\/\w]+:\s`),
+		message: "should not include invalid scope",
+		match:   false,
+	},
+}
 
-func (v *validator) checkTitle() (reason string, valid bool) {
-	for _, r := range v.PullRequest.Title {
-		if unicode.In(r, unicode.Han, unicode.Latin) || unicode.IsPunct(r) || r == ' ' {
-			continue
-		} else {
-			return "contains invalid character", false
+func (v *validator) checkTitle(whr webhookRequest) (reason string, valid bool) {
+	for _, r := range titleRules {
+		if r.match == r.re.Match([]byte(whr.PullRequest.Title)) {
+			return r.message, false
 		}
-	}
-	title := []byte(v.PullRequest.Title)
-	if chineseColonRe.Match(title) {
-		return "invalid '：'", false
-	}
-	if invalidEndRe.Match(title) {
-		return "invalid end", false
-	}
-	if continuousSpaceRe.Match(title) {
-		return "invalid continuous space", false
-	}
-	if !scopeRe.Match(title) {
-		return "invalid scope format", false
 	}
 	return "", true
 }
 
-func (v *validator) checkBody() (reason string, valid bool) {
-	for _, r := range v.PullRequest.Body {
-		if unicode.In(r, unicode.Han, unicode.Latin) || unicode.IsPunct(r) || unicode.IsSpace(r) {
-			continue
-		} else {
-			return "contains invalid character", false
+var bodyRules = []struct {
+	re      *regexp.Regexp
+	message string
+	match   bool
+}{
+	{
+		re:      regexp.MustCompile(`[\p{Han}\p{Latin}[:punct:]\s]+`),
+		message: "should not include invalid characters",
+		match:   true,
+	},
+}
+
+func (v *validator) checkBody(whr webhookRequest) (reason string, valid bool) {
+	for _, r := range bodyRules {
+		if r.match == r.re.Match([]byte(whr.PullRequest.Body)) {
+			return r.message, false
 		}
 	}
 	return "", true
 }
 
-func (v *validator) postGitHubPRCheckStatus(status, description string) error {
-	URL := fmt.Sprintf("https://api.github.com/repos/moruowait/bazeldemo/statuses/%s", v.PullRequest.Head.Sha)
-	data := map[string]string{
-		"state":       status,
-		"target_url":  "https://github.com/xreception/depot/wiki/Pull-Request-Title-and-Description",
-		"description": description,
-		"context":     "PR title and description check",
-	}
-	b, err := json.Marshal(data)
+type gitHubStatus struct {
+	Context     string `json:"context"`
+	Description string `json:"description"`
+	State       string `json:"state"`
+	TargetURL   string `json:"target_url"`
+}
+
+func (v *validator) postGitHubPRCheckStatus(requestURL, state, description string) error {
+	b, err := json.Marshal(gitHubStatus{
+		Context:     "Title and description",
+		TargetURL:   "https://github.com/xreception/depot/wiki/Pull-Request-Title-and-Description",
+		State:       state,
+		Description: description,
+	})
 	if err != nil {
 		return err
 	}
-	client := &http.Client{}
-	req, err := http.NewRequest("POST", URL, bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, requestURL, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("token %s", v.Token))
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -152,35 +178,22 @@ func (v *validator) postGitHubPRCheckStatus(status, description string) error {
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("Failed to post GitHub status with response: %v", string(body))
+		return fmt.Errorf("failed to post GitHub status with response: %v", string(body))
 	}
 	return nil
 }
 
-func getGitHubToken() (string, error) {
-	ctx := context.Background()
-	cli, err := google.DefaultClient(ctx, cloudkms.CloudPlatformScope)
+func decryptGitHubToken(ctx context.Context, ciphertext string) (string, error) {
+	cli, err := cloudkms.NewKeyManagementClient(ctx)
 	if err != nil {
 		return "", err
 	}
-	svr, err := cloudkms.New(cli)
+	req := &kmspb.DecryptRequest{
+		Ciphertext: []byte(ciphertext),
+	}
+	resp, err := cli.Decrypt(ctx, req)
 	if err != nil {
 		return "", err
 	}
-	return decrypt(svr, encryptedToken)
-}
-
-func decrypt(svr *cloudkms.Service, ciphertext string) (string, error) {
-	req := &cloudkms.DecryptRequest{
-		Ciphertext: ciphertext,
-	}
-	resp, err := svr.Projects.Locations.KeyRings.CryptoKeys.Decrypt(kmsKey, req).Do()
-	if err != nil {
-		return "", err
-	}
-	b, err := base64.StdEncoding.DecodeString(resp.Plaintext)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return string(resp.Plaintext), nil
 }
