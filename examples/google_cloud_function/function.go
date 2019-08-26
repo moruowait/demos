@@ -3,6 +3,7 @@ package p
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -19,7 +20,7 @@ const (
 	ghStatusFailure = "failure"
 	ghStatusSuccess = "success"
 
-	encryptedGitHubToken = "CiQA0ev1XL/pbby/r3fjV5/+HhXs0hkURMssmMUyM62y23iUdD4SRwB15DKoWDMeWHmPtv8nyzb11aSv/VZXN000FZ9558D4/ToL1zm0xfHaOSWJ3w1UMhNn0xUHq39Hd2osiUtgfd0gEtJDFAAa"
+	encryptedGitHubToken = "CiQA0ev1XHENdVyN+u9qcP3b2ttIAvOJ/FzDAzqkF6AsOB5dbpsSXAB15DKoM6QegGIm4ZTAxFdHbU3qk4voJNRGLMetvPR7dm4OldOqKrn6D646kSkLv8R5U6FklCwB+qqhlldIPgteWi3p2nYNcIhMpiJndOopRlynlMhHiu3W6Z7q"
 	kmsKey               = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
 )
 
@@ -53,13 +54,17 @@ func init() {
 }
 
 func decryptGitHubToken(ctx context.Context, ciphertext string) (string, error) {
+	b, err := base64.StdEncoding.Decode(ciphertext)
+	if err != nil {
+		return "", err
+	}
 	cli, err := cloudkms.NewKeyManagementClient(ctx)
 	if err != nil {
 		return "", err
 	}
 	req := &kmspb.DecryptRequest{
 		Name:       kmsKey,
-		Ciphertext: []byte(ciphertext),
+		Ciphertext: b,
 	}
 
 	resp, err := cli.Decrypt(ctx, req)
