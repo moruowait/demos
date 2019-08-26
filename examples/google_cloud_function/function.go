@@ -53,8 +53,8 @@ func newValidator(body io.ReadCloser) (*validator, error) {
 	return &v, nil
 }
 
-// ReportPRValidationStatus check whether PR title and description is valid and report status to GitHub.
-func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
+// ValidatePullRequest check whether PR title and description is valid and report status to GitHub.
+func ValidatePullRequest(w http.ResponseWriter, r *http.Request) {
 	v, err := newValidator(r.Body)
 	if err != nil {
 		log.Printf("Failed to new validator: %v", err)
@@ -69,21 +69,20 @@ func ReportPRValidationStatus(w http.ResponseWriter, r *http.Request) {
 
 func (v *validator) validateAndReport() error {
 	if reason, valid := v.checkTitle(); !valid {
-		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, fmt.Sprintf("Test failed(title: %v)", reason)); err != nil {
+		if err := v.postGitHubPRCheckStatus(ghStatusFailure, fmt.Sprintf("Test failed(title: %v)", reason)); err != nil {
 			return err
 		}
 		return nil
 	}
 	if reason, valid := v.checkBody(); !valid {
-		if err := v.postGitHubPRCheckingStatus(ghStatusFailure, fmt.Sprintf("Test failed(body: %v)", reason)); err != nil {
+		if err := v.postGitHubPRCheckStatus(ghStatusFailure, fmt.Sprintf("Test failed(body: %v)", reason)); err != nil {
 			return err
 		}
 		return nil
 	}
-	return v.postGitHubPRCheckingStatus(ghStatusSuccess, "Test passed")
+	return v.postGitHubPRCheckStatus(ghStatusSuccess, "Test passed")
 }
 
-// var formatRe = regexp.MustCompile(`：|\s{2}|[^\w]$`) // ；；
 var chineseColonRe = regexp.MustCompile(`：`)        // 中文冒号
 var invalidEndRe = regexp.MustCompile(`[^\w]$`)     // 非法末尾
 var continuousSpaceRe = regexp.MustCompile(`\s{2}`) // 连续空格
@@ -107,7 +106,7 @@ func (v *validator) checkTitle() (reason string, valid bool) {
 	if continuousSpaceRe.Match(title) {
 		return "invalid continuous space", false
 	}
-	if !scopeRe.Match([]byte(v.PullRequest.Title)) {
+	if !scopeRe.Match(title) {
 		return "invalid scope format", false
 	}
 	return "", true
@@ -124,7 +123,7 @@ func (v *validator) checkBody() (reason string, valid bool) {
 	return "", true
 }
 
-func (v *validator) postGitHubPRCheckingStatus(status, description string) error {
+func (v *validator) postGitHubPRCheckStatus(status, description string) error {
 	URL := fmt.Sprintf("https://api.github.com/repos/moruowait/bazeldemo/statuses/%s", v.PullRequest.Head.Sha)
 	data := map[string]string{
 		"state":       status,
