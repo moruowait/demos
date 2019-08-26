@@ -26,10 +26,7 @@ const (
 
 type webhookRequest struct {
 	PullRequest struct {
-		Body string `json:"body"`
-		Head struct {
-			Sha string `json:"sha"`
-		} `json:"head"`
+		Body        string `json:"body"`
 		StatusesURL string `json:"statuses_url"`
 		Title       string `json:"title"`
 	} `json:"pull_request"`
@@ -81,7 +78,7 @@ func decryptGitHubToken(ctx context.Context, ciphertext string) (string, error) 
 func ValidatePullRequest(w http.ResponseWriter, r *http.Request) {
 	var whr webhookRequest
 	if err := json.NewDecoder(r.Body).Decode(&whr); err != nil {
-		log.Printf("failed to decode requestBody: %v", err)
+		log.Printf("Failed to decode requestBody: %v", err)
 		return
 	}
 	if err := v.validateAndReport(&whr); err != nil {
@@ -183,6 +180,7 @@ func (v *validator) postGitHubPRCheckStatus(whr *webhookRequest, state, descript
 	if err != nil {
 		return err
 	}
+	log.Printf("whr.PullRequest.StatusesURL:", whr.PullRequest.StatusesURL)
 	req, err := http.NewRequest(http.MethodPost, whr.PullRequest.StatusesURL, bytes.NewReader(b))
 	if err != nil {
 		return err
