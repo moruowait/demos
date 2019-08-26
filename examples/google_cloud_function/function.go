@@ -113,7 +113,7 @@ var titleRules = []struct {
 	{
 		re:      regexp.MustCompile(`[\p{Han}\p{Latin}[:punct:]\s]+`),
 		message: "should not include invalid characters",
-		match:   true,
+		match:   false,
 	},
 	{
 		re:      regexp.MustCompile(`：`),
