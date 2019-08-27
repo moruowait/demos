@@ -28,7 +28,7 @@ const (
 )
 
 type webhookRequest struct {
-	PullRequest pullRequest `json:"pull_request"`
+	PullRequest *pullRequest `json:"pull_request"`
 }
 
 type pullRequest struct {
@@ -84,25 +84,25 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to decode requestBody: %v", err)
 		return
 	}
-	if err := v.validatePullRequestMessageAndReport(&whr); err != nil {
+	if err := v.validatePullRequestMessageAndReport(whr.PullRequest); err != nil {
 		log.Printf("Failed to validatePullRequestMessageAndReport: %v", err)
 		return
 	}
 	return
 }
 
-func (v *validator) validatePullRequestMessageAndReport(whr *webhookRequest) error {
-	if err := v.validate(whr); err != nil {
-		return v.postGitHubPRCheckStatus(whr, ghStatusFailure, err.Error())
+func (v *validator) validatePullRequestMessageAndReport(pr *pullRequest) error {
+	if err := v.validate(pr); err != nil {
+		return v.postGitHubPRCheckStatus(pr, ghStatusFailure, err.Error())
 	}
-	return v.postGitHubPRCheckStatus(whr, ghStatusSuccess, "Test passed")
+	return v.postGitHubPRCheckStatus(pr, ghStatusSuccess, "Test passed")
 }
 
-func (v *validator) validate(whr *webhookRequest) error {
-	if err := v.checkTitle(whr); err != nil {
+func (v *validator) validate(pr *pullRequest) error {
+	if err := v.checkTitle(pr); err != nil {
 		return err
 	}
-	if err := v.checkBody(whr); err != nil {
+	if err := v.checkBody(pr); err != nil {
 		return err
 	}
 	return nil
@@ -140,9 +140,9 @@ var titleRules = []struct {
 	},
 }
 
-func (v *validator) checkTitle(whr *webhookRequest) error {
+func (v *validator) checkTitle(pr *pullRequest) error {
 	for _, r := range titleRules {
-		if got, want := r.re.MatchString(whr.PullRequest.Title), r.shouldMatch; got != want {
+		if got, want := r.re.MatchString(pr.Title), r.shouldMatch; got != want {
 			return fmt.Errorf("Test failed (title: %v)", r.name)
 		}
 	}
@@ -161,16 +161,16 @@ var bodyRules = []struct {
 	},
 }
 
-func (v *validator) checkBody(whr *webhookRequest) error {
+func (v *validator) checkBody(pr *pullRequest) error {
 	for _, r := range bodyRules {
-		if got, want := r.re.MatchString(whr.PullRequest.Body), r.shouldMatch; got != want {
+		if got, want := r.re.MatchString(pr.Body), r.shouldMatch; got != want {
 			return fmt.Errorf("Test failed (body: %v)", r.name)
 		}
 	}
 	return nil
 }
 
-func (v *validator) postGitHubPRCheckStatus(whr *webhookRequest, state, description string) error {
+func (v *validator) postGitHubPRCheckStatus(pr *pullRequest, state, description string) error {
 	b, err := json.Marshal(struct {
 		Context     string `json:"context"`
 		Description string `json:"description"`
@@ -185,8 +185,7 @@ func (v *validator) postGitHubPRCheckStatus(whr *webhookRequest, state, descript
 	if err != nil {
 		return err
 	}
-	log.Printf("whr.PullRequest.StatusesURL:", whr.PullRequest.StatusesURL)
-	req, err := http.NewRequest(http.MethodPost, whr.PullRequest.StatusesURL, bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, pr.StatusesURL, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
