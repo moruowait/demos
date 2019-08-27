@@ -124,9 +124,9 @@ var titleRules = []struct {
 		shouldMatch: false,
 	},
 	{
-		re:          regexp.MustCompile(`[^\p{Han}\p{Latin}[:digit:])]$`),
-		name:        "should not end with non-word-characters",
-		shouldMatch: false,
+		re:          regexp.MustCompile(`\(#[[:digit:]]+\)$|[\p{Han}\w]+$`),
+		name:        "should end with '#(xxx)' or words",
+		shouldMatch: true,
 	},
 	{
 		re:          regexp.MustCompile(`\s{2}`),
