@@ -134,7 +134,7 @@ var titleRules = []struct {
 		shouldMatch: false,
 	},
 	{
-		re:          regexp.MustCompile(`[\/\w]+:\s`),
+		re:          regexp.MustCompile(`^(revert: )?[\/\w]+: `),
 		name:        "should have a scope",
 		shouldMatch: true,
 	},
