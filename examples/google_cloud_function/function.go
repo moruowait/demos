@@ -82,6 +82,8 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	var whr webhookRequest
 	if err := json.NewDecoder(r.Body).Decode(&whr); err != nil {
 		log.Printf("Failed to decode requestBody: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
 		return
 	}
 	if err := v.validatePullRequestMessageAndReport(whr.PullRequest); err != nil {
