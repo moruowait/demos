@@ -28,7 +28,7 @@ const (
 	statusTargetURL = "https://github.com/xreception/depot/wiki/Pull-Request-Title-and-Description"
 
 	// encryptedGitHubToken = "CiQA0ev1XJIfg6wmsY7Ln3bbmVqIZVRN0hdsn/L5HXRfb7wTAboSUQB15DKoxvXMvb9vrqco3JVZ46Mw7fBbSBAMCwKD6R33kd0MKQ1QYBsYSeGezwIlk83SwXbqhWZYBLEHgsIJ6mdPFrx76NVf+6x5l5hdxhhlhw=="
-	encryptedGitHubToken = "CiQA0ev1XNPm7H17UZRGMylxCFF8HhxMyXko/5jijeLN5JwglnES1AMAdeQyqLS3TBrr/pE/JsT/rwfQvEdAPolk0mgUCrStq6CmZxku5VmHOaBQcGRbMUsSgLRp1JiUYCF3oQmTtqUFIq3/Z01/c4XIwk2z0+n4rt+9uDt1T2nRQ4L+aNSNcCISGt2h1qhE/A3VIUZRmJiiUD8EBhgTeO2ksl6X11ZeReF7/XQg6WjydzWtBxwJh/gybjPt9R0seM3CC8pzU5VGTY6hGY5h/5Up/EyUcboCQs06BbTltkVcf9lOEzI7gvYeeMLrI4ExtZ5QQ4O4gTkMuiYxn71NDNy1S/gQ81sLp8RPuWWdAl6wg1wuDINcbFDlFLcbQ8KAPRxUNxMqBSCASJTsCk/yC1gF81eTBJbAi6lrl2XUe/pR43c1RoFG2R6/n10UXgEyUADQn0YwZSs3VD7wn13pH4RgNgfK91StxNjdQy96ReRWdm2RHkSWxRdUMdEYiFM1191HWmHJsLwMDqIGLLLByP37FIA4+DadI/WAzcQwWYAJOLzG+so28oWPN8pB1lD8iN0Rm6IbNnMtmpxRv9+S3F0Wm5PZjQHZfSvRKmRCsYG3hzyzUGiPZcZF8dkuCoK6x+Nd9ziRB9RFxBhdBtXY3a0QsNz4dbZc14Tmeg4="
+	encryptedGitHubToken = "CiQA0ev1XCpcV5cYqbG3UOey7jsRpN9HfEwozf+Kyeqcjl5p/N8SVAB15DKorR3S2WMHIeLurF0XuVenhOPiOQagYKyvysOxOZPVJar/HIEQS/ZLmdQigZMQnuHHzdyXPSSKk2MMBiV3C6koP1FOKwDPBTyymgbKZIeaHw=="
 	kmsKey               = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
 )
 
@@ -182,7 +182,7 @@ func (v *pullRequestMessageValidator) postStatus(pr *pullRequest, state statusSt
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.token))
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", v.token))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
