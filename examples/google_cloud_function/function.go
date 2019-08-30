@@ -223,25 +223,6 @@ func decrypt(ctx context.Context, ciphertext string) ([]byte, error) {
 	return resp.Plaintext, nil
 }
 
-func mustDecrypt(ctx context.Context, ciphertext string) string {
-	b, err := base64.StdEncoding.DecodeString(ciphertext)
-	if err != nil {
-		panic(err)
-	}
-	cli, err := kms.NewKeyManagementClient(ctx)
-	if err != nil {
-		panic(err)
-	}
-	resp, err := cli.Decrypt(ctx, &kmspb.DecryptRequest{
-		Name:       kmsKey,
-		Ciphertext: b,
-	})
-	if err != nil {
-		panic(err)
-	}
-	return string(resp.Plaintext)
-}
-
 // HandleWebhook handles a github webhook request.
 func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	var whr webhookRequest
