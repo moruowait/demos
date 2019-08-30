@@ -56,6 +56,7 @@ type rule struct {
 }
 
 type pullRequestMessageValidator struct {
+	auth       *authenticate
 	titleRules []rule
 	bodyRules  []rule
 }
@@ -69,7 +70,7 @@ type authenticate struct {
 
 func (a *authenticate) getToken() (string, error) {
 	if a.token == nil || time.Now().After(a.token.ExpiresAt) {
-		t, err := a.genInstallationAccessToken(a.signedToken)
+		t, err := a.genInstallationAccessToken()
 		if err != nil {
 			return "", err
 		}
@@ -103,9 +104,9 @@ func (a *authenticate) newInstallationAccessToken(signedToken string) (*installa
 		if err != nil {
 			return nil, err
 		}
-		return fmt.Errorf("failed to create access_token with response: %q", body)
+		return nil, fmt.Errorf("failed to create installation access_token with response: %q", body)
 	}
-	var t token
+	var t installationAccessToken
 	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
 		return nil, err
 	}
@@ -118,7 +119,7 @@ type installationAccessToken struct {
 }
 
 var v = pullRequestMessageValidator{
-	auth: authenticate{
+	auth: &authenticate{
 		endpoint: installationAccessTokenEndpoint,
 		jwtToken: jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 			"iat": time.Now().Unix(),
@@ -168,7 +169,7 @@ func mustGeneratePrivateKey(ctx context.Context, ciphertext string) *rsa.Private
 	if err != nil {
 		panic(err)
 	}
-	pk, err := jwt.ParseRSAPrivateKeyFromPEM(key)
+	pk, err := jwt.ParseRSAPrivateKeyFromPEM(b)
 	if err != nil {
 		panic(err)
 	}
@@ -265,6 +266,10 @@ func (v *pullRequestMessageValidator) validateBody(pr *pullRequest) error {
 }
 
 func (v *pullRequestMessageValidator) postStatus(pr *pullRequest, state statusState, description string) error {
+	token, err := v.auth.getToken()
+	if err != nil {
+		return err
+	}
 	b, err := json.Marshal(struct {
 		Context     string      `json:"context"`
 		Description string      `json:"description"`
@@ -284,7 +289,7 @@ func (v *pullRequestMessageValidator) postStatus(pr *pullRequest, state statusSt
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("token %s", v.token))
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", token))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
