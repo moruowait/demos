@@ -92,7 +92,7 @@ func (a *authenticate) newInstallationAccessToken(signedToken string) (*installa
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/vnd.github.machine-man-preview+json")
+	req.Header.Set("Accept", "application/vnd.github.machine-man-preview+json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", signedToken))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
