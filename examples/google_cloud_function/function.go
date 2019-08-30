@@ -110,6 +110,7 @@ func (a *authenticate) newInstallationAccessToken(signedToken string) (*installa
 	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
 		return nil, err
 	}
+	log.Println(t)
 	return &t, nil
 }
 
