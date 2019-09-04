@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/kms/apiv1"
@@ -48,7 +49,7 @@ type rule struct {
 }
 
 var validator = pullRequestMessageValidator{
-	accessTokenSource: newAccessTokenSource(context.Background()),
+	accessTokenSource: newAccessTokenSource(appInstallationAccessTokenEndpoint, newPrivateKeyStash(encryptedAppPrivateKey, encryptionKey)),
 	titleRules: []rule{
 		{
 			re:          regexp.MustCompile(`[^\p{Han}\p{Latin}[:punct:]\d\s，、￥]+`),
@@ -104,7 +105,7 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, fmt.Sprintf("Failed to decode requestBody: %v", err))
 		return
 	}
-	if err := validator.report(whr.PullRequest, validator.validate(whr.PullRequest)); err != nil {
+	if err := validator.report(context.Background(), whr.PullRequest, validator.validate(whr.PullRequest)); err != nil {
 		log.Printf("Failed to report: %v", err)
 		return
 	}
@@ -127,11 +128,11 @@ func (v *pullRequestMessageValidator) validate(pr *pullRequest) error {
 	return nil
 }
 
-func (v *pullRequestMessageValidator) report(pr *pullRequest, err error) error {
+func (v *pullRequestMessageValidator) report(ctx context.Context, pr *pullRequest, err error) error {
 	if err != nil {
-		return validator.postStatus(pr, failure, err.Error())
+		return validator.postStatus(ctx, pr, failure, err.Error())
 	}
-	return validator.postStatus(pr, success, "Test passed")
+	return validator.postStatus(ctx, pr, success, "Test passed")
 }
 
 func (v *pullRequestMessageValidator) validateTitle(pr *pullRequest) error {
@@ -144,19 +145,22 @@ func (v *pullRequestMessageValidator) validateTitle(pr *pullRequest) error {
 }
 
 func (v *pullRequestMessageValidator) validateBody(pr *pullRequest) error {
-	for _, r := range validator.bodyRules {
-		if got, want := r.re.MatchString(pr.Body), r.shouldMatch; got != want {
-			return fmt.Errorf("body: %v", r.name)
+	for _, r := range v.bodyRules {
+		for k, body := range strings.Split(pr.Body, "\n") {
+			if idxes := r.re.FindAllStringSubmatchIndex(body, -1); idxes != nil {
+				var position string
+				for _, idx := range idxes {
+					position += fmt.Sprintf("[%d:%d]", k+1, idx[0])
+				}
+				return fmt.Errorf("body: %v: %v", position, r.name)
+			}
 		}
 	}
 	return nil
+	return nil
 }
 
-func (v *pullRequestMessageValidator) postStatus(pr *pullRequest, state statusState, description string) error {
-	token, err := validator.accessTokenSource.getToken()
-	if err != nil {
-		return err
-	}
+func (v *pullRequestMessageValidator) postStatus(ctx context.Context, pr *pullRequest, state statusState, description string) error {
 	b, err := json.Marshal(struct {
 		Context     string      `json:"context"`
 		Description string      `json:"description"`
@@ -175,13 +179,19 @@ func (v *pullRequestMessageValidator) postStatus(pr *pullRequest, state statusSt
 	if err != nil {
 		return err
 	}
+	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
+	token, err := validator.accessTokenSource.GetToken(ctx)
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Authorization", fmt.Sprintf("token %s", token))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	// TODO(moruowait): 如果返回是 401 错误，应该重新获取 token 进行重试。
 	if resp.StatusCode != http.StatusCreated {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
@@ -192,22 +202,69 @@ func (v *pullRequestMessageValidator) postStatus(pr *pullRequest, state statusSt
 	return nil
 }
 
-type accessTokenSource struct {
-	endpoint string
-	pk       *rsa.PrivateKey
-	token    *accessToken
+type privateKeyStash struct {
+	pk                     *rsa.PrivateKey
+	encryptedAppPrivateKey string
+	encryptionKey          string
 }
 
-func newAccessTokenSource(ctx context.Context) *accessTokenSource {
-	return &accessTokenSource{
-		endpoint: appInstallationAccessTokenEndpoint,
-		pk:       mustGetPrivateKey(ctx, encryptedAppPrivateKey),
+func newPrivateKeyStash(encryptedAppPrivateKey, encryptionKey string) *privateKeyStash {
+	return &privateKeyStash{
+		encryptedAppPrivateKey: encryptedAppPrivateKey,
+		encryptionKey:          encryptionKey,
 	}
 }
 
-func (a *accessTokenSource) getToken() (string, error) {
+func (pks *privateKeyStash) getPrivateKey(ctx context.Context) (*rsa.PrivateKey, error) {
+	if pks.pk == nil {
+		b, err := pks.decrypt(ctx)
+		if err != nil {
+			return nil, err
+		}
+		pk, err := jwt.ParseRSAPrivateKeyFromPEM(b)
+		if err != nil {
+			return nil, err
+		}
+		pks.pk = pk
+	}
+	return pks.pk, nil
+}
+
+func (pks *privateKeyStash) decrypt(ctx context.Context) ([]byte, error) {
+	b, err := base64.StdEncoding.DecodeString(pks.encryptedAppPrivateKey)
+	if err != nil {
+		return nil, err
+	}
+	cli, err := kms.NewKeyManagementClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := cli.Decrypt(ctx, &kmspb.DecryptRequest{
+		Name:       pks.encryptionKey,
+		Ciphertext: b,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Plaintext, nil
+}
+
+type accessTokenSource struct {
+	endpoint string
+	pks      *privateKeyStash
+	token    *accessToken
+}
+
+func newAccessTokenSource(endpoint string, pks *privateKeyStash) *accessTokenSource {
+	return &accessTokenSource{
+		endpoint: endpoint,
+		pks:      pks,
+	}
+}
+
+func (a *accessTokenSource) GetToken(ctx context.Context) (string, error) {
 	if a.token.expired() {
-		t, err := a.genAccessToken()
+		t, err := a.getAccessToken(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -216,26 +273,32 @@ func (a *accessTokenSource) getToken() (string, error) {
 	return a.token.Token, nil
 }
 
-func (a *accessTokenSource) genAccessToken() (*accessToken, error) {
-	jwtToken := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(signedTokenExpireTime).Unix(),
+func (a *accessTokenSource) generateIdentityToken(ctx context.Context) (string, error) {
+	now := time.Now()
+	t := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"iat": now.Unix(),
+		"exp": now.Add(signedTokenExpireTime).Unix(),
 		"iss": appID,
 	})
-	st, err := jwtToken.SignedString(a.pk)
+	pk, err := a.pks.getPrivateKey(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return a.newAccessToken(st)
+	return t.SignedString(pk)
 }
 
-func (a *accessTokenSource) newAccessToken(signedToken string) (*accessToken, error) {
+func (a *accessTokenSource) getAccessToken(ctx context.Context) (*accessToken, error) {
 	req, err := http.NewRequest(http.MethodPost, a.endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
+	req = req.WithContext(ctx)
 	req.Header.Set("Accept", "application/vnd.github.machine-man-preview+json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", signedToken))
+	it, err := a.generateIdentityToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", it))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -264,39 +327,5 @@ func (iat *accessToken) expired() bool {
 	if iat == nil {
 		return true
 	}
-	if time.Now().After(iat.ExpiresAt.Add(-clockSkewAllowance)) {
-		return true
-	}
-	return false
-}
-
-func mustGetPrivateKey(ctx context.Context, ciphertext string) *rsa.PrivateKey {
-	b, err := decrypt(ctx, ciphertext)
-	if err != nil {
-		panic(err)
-	}
-	pk, err := jwt.ParseRSAPrivateKeyFromPEM(b)
-	if err != nil {
-		panic(err)
-	}
-	return pk
-}
-
-func decrypt(ctx context.Context, ciphertext string) ([]byte, error) {
-	b, err := base64.StdEncoding.DecodeString(ciphertext)
-	if err != nil {
-		return nil, err
-	}
-	cli, err := kms.NewKeyManagementClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := cli.Decrypt(ctx, &kmspb.DecryptRequest{
-		Name:       encryptionKey,
-		Ciphertext: b,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return resp.Plaintext, nil
+	return time.Now().After(iat.ExpiresAt.Add(-clockSkewAllowance))
 }
