@@ -35,13 +35,12 @@ const (
 
 	appID                              = 39801
 	appInstallationAccessTokenEndpoint = "https://api.github.com/app/installations/1705204/access_tokens"
-	encryptedAppPrivateKey             = "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"
+	encryptedPrivateKey                = "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"
 	encryptionKey                      = "projects/gcp-test-195721/locations/global/keyRings/test/cryptoKeys/github_access_test_key"
 
+	allowedChars            = "\\p{Han}[:graph:]\t\n ¥！？。“”（），：；…"
 	clockSkewAllowance      = 5 * time.Minute
 	identityTokenExpireTime = 1 * time.Minute
-	punctCN                 = "！？。“”（），：；…"
-	symbol                  = "￥$"
 )
 
 type rule struct {
@@ -51,16 +50,11 @@ type rule struct {
 }
 
 var validator = pullRequestMessageValidator{
-	accessTokenSource: newAccessTokenSource(appInstallationAccessTokenEndpoint, newPrivateKeyStash(encryptedAppPrivateKey, encryptionKey)),
+	accessTokenSource: newAccessTokenSource(appInstallationAccessTokenEndpoint, newPrivateKeyStash(encryptedPrivateKey, encryptionKey)),
 	titleRules: []rule{
 		{
-			re:          regexp.MustCompile(fmt.Sprintf(`[^\p{Han}\p{Latin}[:punct:]\d\s%s%s]+`, punctCN, symbol)),
+			re:          regexp.MustCompile(fmt.Sprintf(`%s|：+`, allowedChars)),
 			name:        "should not include invalid characters",
-			shouldMatch: false,
-		},
-		{
-			re:          regexp.MustCompile(`：`),
-			name:        "should not include Chinese colon",
 			shouldMatch: false,
 		},
 		{
@@ -81,7 +75,7 @@ var validator = pullRequestMessageValidator{
 	},
 	bodyRules: []rule{
 		{
-			re:          regexp.MustCompile(fmt.Sprintf(`[^\p{Han}\p{Latin}[:punct:]\d\s%s%s]+`, punctCN, symbol)),
+			re:          regexp.MustCompile(allowedChars),
 			name:        "should not include invalid characters",
 			shouldMatch: false,
 		},
@@ -148,18 +142,11 @@ func (v *pullRequestMessageValidator) validateTitle(pr *pullRequest) error {
 
 func (v *pullRequestMessageValidator) validateBody(pr *pullRequest) error {
 	for _, r := range v.bodyRules {
-		var position string
-		for k, b := range strings.Split(pr.Body, "\n") {
-			idxes := r.re.FindAllStringSubmatchIndex(b, -1)
-			if idxes == nil {
-				continue
+		for i, line := range strings.Split(pr.Body, "\n") {
+			idx := r.re.FindStringIndex(line)
+			if got, want := idx != nil, r.shouldMatch; got != want {
+				return fmt.Errorf("body:%d:%d: %v", i+1, idx[0], r.name)
 			}
-			for _, idx := range idxes {
-				position += fmt.Sprintf("[%d:%d]", k+1, idx[0])
-			}
-		}
-		if position != "" {
-			return fmt.Errorf("body: %v: %v", position, r.name)
 		}
 	}
 	return nil
@@ -208,19 +195,19 @@ func (v *pullRequestMessageValidator) postStatus(ctx context.Context, pr *pullRe
 }
 
 type privateKeyStash struct {
-	pk                     *rsa.PrivateKey
-	encryptedAppPrivateKey string
-	encryptionKey          string
+	pk                  *rsa.PrivateKey
+	encryptedPrivateKey string
+	encryptionKey       string
 }
 
-func newPrivateKeyStash(encryptedAppPrivateKey, encryptionKey string) *privateKeyStash {
+func newPrivateKeyStash(encryptedPrivateKey, encryptionKey string) *privateKeyStash {
 	return &privateKeyStash{
-		encryptedAppPrivateKey: encryptedAppPrivateKey,
-		encryptionKey:          encryptionKey,
+		encryptedPrivateKey: encryptedPrivateKey,
+		encryptionKey:       encryptionKey,
 	}
 }
 
-func (pks *privateKeyStash) getPrivateKey(ctx context.Context) (*rsa.PrivateKey, error) {
+func (pks *privateKeyStash) Get(ctx context.Context) (*rsa.PrivateKey, error) {
 	if pks.pk == nil {
 		b, err := pks.decrypt(ctx)
 		if err != nil {
@@ -236,7 +223,7 @@ func (pks *privateKeyStash) getPrivateKey(ctx context.Context) (*rsa.PrivateKey,
 }
 
 func (pks *privateKeyStash) decrypt(ctx context.Context) ([]byte, error) {
-	b, err := base64.StdEncoding.DecodeString(pks.encryptedAppPrivateKey)
+	b, err := base64.StdEncoding.DecodeString(pks.encryptedPrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +272,7 @@ func (a *accessTokenSource) generateIdentityToken(ctx context.Context) (string, 
 		"exp": now.Add(identityTokenExpireTime).Unix(),
 		"iss": appID,
 	})
-	pk, err := a.pks.getPrivateKey(ctx)
+	pk, err := a.pks.Get(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -329,8 +316,5 @@ type accessToken struct {
 }
 
 func (iat *accessToken) expired() bool {
-	if iat == nil {
-		return true
-	}
-	return time.Now().After(iat.ExpiresAt.Add(-clockSkewAllowance))
+	return iat == nil || time.Now().After(iat.ExpiresAt.Add(-clockSkewAllowance))
 }
