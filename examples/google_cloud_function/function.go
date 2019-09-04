@@ -147,14 +147,18 @@ func (v *pullRequestMessageValidator) validateTitle(pr *pullRequest) error {
 
 func (v *pullRequestMessageValidator) validateBody(pr *pullRequest) error {
 	for _, r := range v.bodyRules {
-		for k, body := range strings.Split(pr.Body, "\n") {
-			if idxes := r.re.FindAllStringSubmatchIndex(body, -1); idxes != nil {
-				var position string
-				for _, idx := range idxes {
-					position += fmt.Sprintf("[%d:%d]", k+1, idx[0])
-				}
-				return fmt.Errorf("body: %v: %v", position, r.name)
+		var position string
+		for k, b := range strings.Split(pr.Body, "\n") {
+			idxes := r.re.FindAllStringSubmatchIndex(b, -1)
+			if idxes == nil {
+				continue
 			}
+			for _, idx := range idxes {
+				position += fmt.Sprintf("[%d:%d]", k+1, idx[0])
+			}
+		}
+		if position != "" {
+			return fmt.Errorf("body: %v: %v", position, r.name)
 		}
 	}
 	return nil
