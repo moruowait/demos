@@ -2,6 +2,7 @@
 package prlice
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rsa"
@@ -144,27 +145,36 @@ func (v *pullRequestMessageValidator) report(ctx context.Context, pr *pullReques
 
 func (v *pullRequestMessageValidator) validateTitle(pr *pullRequest) error {
 	for _, r := range v.titleRules {
-		if got, want := r.re.MatchString(pr.Title), r.shouldMatch; got != want {
-			return fmt.Errorf("title: %v", r.name)
+		idx := r.re.FindStringIndex(pr.Title)
+		if got, want := idx != nil, r.shouldMatch; got == want {
+			continue
 		}
+		if idx != nil {
+			return fmt.Errorf("title:%d %v: %q", idx[0]+1, r.name, pr.Title[idx[0]:idx[1]])
+		}
+		return fmt.Errorf("title: %v", r.name)
 	}
 	return nil
 }
 
 func (v *pullRequestMessageValidator) validateBody(pr *pullRequest) error {
-	for _, r := range v.bodyRules {
-		for lineNo, line := range strings.Split(pr.Body, "\n") {
+	scanner := bufio.NewScanner(strings.NewReader(pr.Body))
+	lineNo := 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		lineNo++
+		for _, r := range v.bodyRules {
 			idx := r.re.FindStringIndex(line)
 			if got, want := idx != nil, r.shouldMatch; got == want {
 				continue
 			}
 			if idx != nil {
-				return fmt.Errorf("body:%d:%d: %v: %q", lineNo+1, idx[0]+1, r.name, line[idx[0]:idx[1]])
+				return fmt.Errorf("body:%d:%d: %v: %q", lineNo, idx[0]+1, r.name, line[idx[0]:idx[1]])
 			}
 			return fmt.Errorf("body: %v", r.name)
 		}
 	}
-	return nil
+	return scanner.Err()
 }
 
 func (v *pullRequestMessageValidator) postStatus(ctx context.Context, pr *pullRequest, state statusState, description string) error {
