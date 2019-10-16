@@ -15,11 +15,11 @@ import (
 )
 
 var (
-	buildWaitingLatency     = stats.Float64("build_waiting_latency", "The build waiting latency in seconds", stats.UnitSeconds)
+	buildWaitingLatency     = stats.Float64("buildkite/build_waiting_latency", "The build waiting latency in seconds", stats.UnitSeconds)
 	tagPipeline             = tag.MustNewKey("pipeline")
 	projectID               = "gcp-test-195721"
 	buildWaitingLatencyView = view.View{
-		Name:        "build_waiting_latency_distribution",
+		Name:        buildWaitingLatency.Name(),
 		Description: "The distribution of the build waiting latency",
 		Measure:     buildWaitingLatency,
 		TagKeys:     []tag.Key{tagPipeline},
@@ -29,7 +29,7 @@ var (
 
 func init() {
 	if err := view.Register(&buildWaitingLatencyView); err != nil {
-		log.Printf("Failed to register view: ", buildWaitingLatencyView.Name)
+		log.Printf("Failed to register view: %s", buildWaitingLatencyView.Name)
 		return
 	}
 	e, err := stackdriver.NewExporter(stackdriver.Options{
