@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
-	"log"
 
 	"contrib.go.opencensus.io/exporter/stackdriver"
 	"go.opencensus.io/stats"
@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	buildWaitingLatency     = stats.Float64("build_waiting_latency", "The build waiting latency in minutes", stats.UnitSeconds)
+	buildWaitingLatency     = stats.Float64("build_waiting_latency", "The build waiting latency in seconds", stats.UnitSeconds)
 	tagPipeline             = tag.MustNewKey("pipeline")
 	projectID               = "gcp-test-195721"
 	buildWaitingLatencyView = view.View{
