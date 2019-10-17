@@ -3,7 +3,6 @@ package webhook
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -14,17 +13,23 @@ import (
 	"go.opencensus.io/tag"
 )
 
+const (
+	buildRunning  = "build.running"
+	buildFinished = "build.finished"
+)
+
 var (
-	buildWaitingLatency     = stats.Float64("buildkite/build_waiting_latency", "The build waiting latency in seconds", stats.UnitSeconds)
 	tagPipeline             = tag.MustNewKey("pipeline")
-	projectID               = "gcp-test-195721"
+	buildWaitingLatency     = stats.Float64("buildkite/build_waiting_latency", "The build waiting latency in seconds", stats.UnitSeconds)
 	buildWaitingLatencyView = view.View{
 		Name:        buildWaitingLatency.Name(),
 		Description: "The distribution of the build waiting latency",
 		Measure:     buildWaitingLatency,
 		TagKeys:     []tag.Key{tagPipeline},
-		Aggregation: view.Distribution(40, 100, 200, 400, 800, 1000),
+		Aggregation: view.Distribution(1, 2, 4, 8, 16, 32, 64, 120, 180, 360, 720),
 	}
+	exporterFlushInterval = 5 * time.Second
+	projectID             = "gcp-test-195721"
 )
 
 func init() {
@@ -40,18 +45,27 @@ func init() {
 		return
 	}
 	view.RegisterExporter(e)
+	go func() {
+		t := time.NewTicker(exporterFlushInterval)
+		for {
+			select {
+			case <-t.C:
+				e.Flush()
+			}
+		}
+	}()
 }
 
 type buildkiteEvent struct {
 	Build    build    `json:"build"`
-	Event    string   `json:"event"`
 	Pipeline pipeline `json:"pipeline"`
 }
 
 type build struct {
-	CreatedAt   time.Time `json:"created_at"`
+	State       string    `json:"state"`
 	ScheduledAt time.Time `json:"scheduled_at"`
 	StartedAt   time.Time `json:"started_at"`
+	FinishedAt  time.Time `json:"finished_at"`
 }
 
 type pipeline struct {
@@ -60,16 +74,29 @@ type pipeline struct {
 
 // HandleWebhook handles a buildkite webhook request.
 func HandleWebhook(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "hello webhook")
+	var be buildkiteEvent
+	if err := json.NewDecoder(r.Body).Decode(&be); err != nil {
+		log.Printf("Failed to decode requestBody: %v", err)
+		return
+	}
+	mutators := []tag.Mutator{tag.Upsert(tagPipeline, be.Pipeline.Slug)}
 	switch r.Header.Get("X-Buildkite-Event") {
-	case "build.running":
-		var be buildkiteEvent
-		if err := json.NewDecoder(r.Body).Decode(&be); err != nil {
-			log.Printf("Failed to decode requestBody: %v", err)
+	case buildRunning:
+		d := be.Build.StartedAt.Sub(be.Build.ScheduledAt)
+		if err := stats.RecordWithTags(context.Background(), mutators, buildWaitingLatency.M(d.Seconds())); err != nil {
+			log.Printf("Failed to record stats: %f with pipeline %s", d.Seconds(), be.Pipeline.Slug)
 			return
 		}
-		d := be.Build.StartedAt.Sub(be.Build.ScheduledAt)
-		stats.RecordWithTags(context.Background(), []tag.Mutator{tag.Upsert(tagPipeline, be.Pipeline.Slug)}, buildWaitingLatency.M(d.Seconds()))
+		return
+	case buildFinished:
+		if be.Build.State != "canceled" {
+			return
+		}
+		d := be.Build.FinishedAt.Sub(be.Build.ScheduledAt)
+		if err := stats.RecordWithTags(context.Background(), mutators, buildWaitingLatency.M(d.Seconds())); err != nil {
+			log.Printf("Failed to record stats: %f with pipeline %s", d.Seconds(), be.Pipeline.Slug)
+			return
+		}
 		return
 	}
 }
