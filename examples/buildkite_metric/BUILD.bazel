@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["handler.go"],
+    importpath = "demos/examples/buildkite_metric",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@io_opencensus_go//stats:go_default_library",
+        "@io_opencensus_go//stats/view:go_default_library",
+        "@io_opencensus_go//tag:go_default_library",
+    ],
+)
+
+go_test(
+    name = "go_default_test",
+    srcs = ["handler_test.go"],
+    embed = [":go_default_library"],
+    deps = [
+        "@io_opencensus_go//stats:go_default_library",
+        "@io_opencensus_go//stats/view:go_default_library",
+        "@io_opencensus_go//tag:go_default_library",
+        "@io_opencensus_go_contrib_exporter_stackdriver//:go_default_library",
+    ],
+)
