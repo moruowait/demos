@@ -1,4 +1,4 @@
-module demos/examples/buildkite_metric
+module demos/examples/metric
 
 go 1.11
 
